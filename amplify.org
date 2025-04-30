@@ -20,12 +20,15 @@ analysis.
 #+end_src
 #+begin_export latex
 The program takes a pair of primers as the input. The user can set the
-maximum amplicon length and the maximum number of threads.
+maximum amplicon length and the maximum number of threads, as well as
+opt for reporting reversed complements of inverted amplicons.
 #+end_export
 #+begin_src go <<Declare options>>=
   optP := flag.String("p", "", "fasta file with a pair of primers")
   optL := flag.Int("l", 5000, "the maximum amplicon length")
   optT := flag.Int("t", runtime.NumCPU(), "maximum number of threads")
+  optI := flag.Bool("i", false, "report reversed complements of " +
+	  "inverted amplicons ('re-invert them back')")
 #+end_src
 #+begin_export latex
 We import \texttt{flag} and \texttt{runtime}.
@@ -166,13 +169,13 @@ we will define shortly) concurrently for all genomes specified by the
 user.
 #+end_export
 #+begin_src go <<Run the analysis>>=
-    var wg sync.WaitGroup
-  //  var mu sync.Mutex
-    for _, genomePath := range genomePaths {
-	    wg.Add(1)
-	    go processGenome(&wg, genomePath, primerRegexps, *optL)
-    }
-    wg.Wait()
+  var wg sync.WaitGroup
+  for _, genomePath := range genomePaths {
+	  wg.Add(1)
+	  go processGenome(&wg, genomePath, primerRegexps,
+		  *optL, *optI)
+  }
+  wg.Wait()
 #+end_src
 #+begin_export latex
 We import \texttt{sync}.
@@ -188,7 +191,7 @@ dismissed upon finishing.
 #+end_export
 #+begin_src go <<Functions>>=
   func processGenome(wg *sync.WaitGroup, genomePath string,
-	  primerRegexps [4]*regexp.Regexp, ampL int) {
+	  primerRegexps [4]*regexp.Regexp, ampL int, valI bool) {
 	  defer wg.Done()
 	  //<<Read the genome>>
 	  //<<Find amplicons>>
@@ -240,7 +243,8 @@ try to find 'upright' amplicons, as well as 'inverted' ones.
 #+begin_export latex
 We take the upright pair of primers and initialize an amplicon
 direction string, which is empty now since the amplicon is supposed to
-be upright by default. and try to find all matches for the forward
+be upright by default. We also initialize a switch to re-invert the
+amplicons as inactive. Then we try to find all matches for the forward
 primer. Then we iterate over these matches and try to pair it with a
 reverse primer match found in the downstream sequence that could
 potentially make for an amplicon. Once we finished with the search for
@@ -251,6 +255,7 @@ matches, we return found amplicons if any.
   forward := primerRegexps[0]
   reverse := primerRegexps[1]
   ampDirection := ""
+  reInvert := false
   //<<Find forward matches>>
   contigLen := len(contig.Data())
   for _, fm := range forwardMatches {
@@ -307,7 +312,8 @@ We iterate over the reverse matches and print the amplicons. An
 amplicon's header consists of the genome file base name, the word
 'amplicon' and its number followed by found amplicon direction, which
 is \texttt{\_inverted} if the amplicon was inverted, otherwise it is
-empty.
+empty. We also take the reversed complement of the sequence if we're
+dealing with inverted amplicons and the \texttt{-i} flag is used.
 #+end_export
 #+begin_src go <<Report found amplicons>>=
   for _, rm := range reverseMatches {
@@ -315,19 +321,24 @@ empty.
 		  genomeName, ampIndex, ampDirection)
 	  ampData := dseq[0:rm[1]]
 	  amplicon := fasta.NewSequence(ampHeader, ampData)
+	  if reInvert {
+		  amplicon.ReverseComplement()
+	  }
 	  fmt.Println(amplicon)
 	  ampIndex++
   }
 #+end_src
 #+begin_export latex
 We discard the previous results, take the inverted primers and repeat
-the search likewise.
+the search likewise. We set the amplicon direction to inverted and
+check the value of \texttt{valI}, that is, the \texttt{-i} flag value.
 #+end_export
 #+begin_src go <<Search for inverted amplicons>>=
   var forwardMatches [][]int
   forward := primerRegexps[2]
   reverse := primerRegexps[3]
   ampDirection := "_inverted"
+  reInvert := valI 
   //<<Find forward matches>>
   contigLen := len(contig.Data())
   for _, fm := range forwardMatches {
