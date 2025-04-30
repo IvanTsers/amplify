@@ -1,0 +1,6 @@
+github.com/evolbioinf/clio v0.0.0-20240827074707-cb9ff755a85b h1:26/B3KZkdt/NzB5wuv/tDb1KPSJ5A17zxQbcoURo5WM=
+github.com/evolbioinf/clio v0.0.0-20240827074707-cb9ff755a85b/go.mod h1:S13GccNRJPbjEsLZ/yCLFRVhdTS4qUJ+mf9GtZja8do=
+github.com/evolbioinf/fasta v0.0.0-20230419094527-219cc47d94b2 h1:Ipt7iPoRCqsIhtVNTq1bUwtFj2auwoX+xxmwBm+vEDA=
+github.com/evolbioinf/fasta v0.0.0-20230419094527-219cc47d94b2/go.mod h1:1bD5OMlu85gdxSDr74kxUElPjLc/EVTzkRw2UT+FMhg=
+github.com/ivantsers/fastautils v0.0.0-20250120124012-65d382942fe0 h1:cdnVRFe65OFfCYIzOo4S26++5pJhWlfld9jZp8FAJfo=
+github.com/ivantsers/fastautils v0.0.0-20250120124012-65d382942fe0/go.mod h1:VLk5ezhuMgre18fnIDyKKQ9KIilte7+xyqKtvze7aO8=

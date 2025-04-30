@@ -1,0 +1,19 @@
+\documentclass[a4paper]{article}
+\input{header}
+\begin{document}
+\pagestyle{noweb}
+
+\title{\texttt{amplify} a genomic region \textit{in silico}}
+\author{Ivan Tsers}
+\date{\input{date.txt}, \input{version.txt}}
+\maketitle
+
+\tableofcontents
+
+\section{Introduction}
+\input{intro}
+\section{Implementation}
+\input{amplify}
+\section{Testing}
+\input{amplify_test}
+\end{document}

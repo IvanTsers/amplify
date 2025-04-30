@@ -1,0 +1,338 @@
+#+begin_export latex
+The program \texttt{amplify} has hooks for functions, imports, and the
+main function, which contains option declaration and parsing, usage
+settings. Once the options are ready, it reads primers and runs the
+analysis.
+#+end_export
+#+begin_src go <<amplify.go>>=
+  package main
+  import (
+	  //<<Imports>>
+  )
+  //<<Functions>>
+  func main() {
+	  //<<Declare options>>
+	  //<<Set usage>>
+	  //<<Parse options>>
+	  //<<Read primers>>
+	  //<<Run the analysis>>
+  }
+#+end_src
+#+begin_export latex
+The program takes a pair of primers as the input. The user can set the
+maximum amplicon length and the maximum number of threads.
+#+end_export
+#+begin_src go <<Declare options>>=
+  optP := flag.String("p", "", "fasta file with a pair of primers")
+  optL := flag.Int("l", 5000, "the maximum amplicon length")
+  optT := flag.Int("t", runtime.NumCPU(), "maximum number of threads")
+#+end_src
+#+begin_export latex
+We import \texttt{flag} and \texttt{runtime}.
+#+end_export
+#+begin_src go <<Imports>>=
+  "flag"
+  "runtime"
+#+end_src
+#+begin_export latex
+The usage consists of three statements. The actual usage statement, an
+explanation of the program’s purpose, and an example command.
+#+end_export
+#+begin_src go <<Set usage>>=
+  u := "amplify [options] genomes..."
+  p := "Find amplicons corresponding to a pair of primers"
+  e := "amplify -p primers.fasta -l 1000 genome1.fasta genome2.fasta"
+  clio.Usage(u, p, e)
+#+end_src
+#+begin_export latex
+We import \texttt{clio}.
+#+end_export
+#+begin_src go <<Imports>>=
+  "github.com/evolbioinf/clio"
+#+end_src
+#+begin_export latex
+We parse the options and interpret trailing arguments as target genome
+file paths. If no primers genomes were specified, we notify the user
+and exit. Finally, we set the maximum number of CPUs the program can
+use.
+#+end_export
+#+begin_src go <<Parse options>>=
+  flag.Parse()
+  genomePaths := flag.Args()
+  if *optP == "" {
+	  fmt.Fprintf(os.Stderr, "please specify primers\n")
+	  os.Exit(1)
+
+  }
+  if len(genomePaths) < 1 {
+	  fmt.Fprintf(os.Stderr, "please specify genomes\n")
+	  os.Exit(1)
+  }
+  runtime.GOMAXPROCS(*optT)
+#+end_src
+#+begin_export latex
+We import \texttt{fmt} and \texttt{os}.
+#+end_export
+#+begin_src go <<Imports>>=
+  "fmt"
+  "os"
+#+end_src
+#+begin_export latex
+We read the input file with primers. We expect only two entries in the
+input \texttt{fasta} file. If there are more or less, we notify the
+user and exit. We will use \texttt{regex} to match primers, so we
+proceed with compiling regular expressions.
+#+end_export
+#+begin_src go <<Read primers>>=
+  f, err := os.Open(*optP)
+
+  if err != nil {
+	  fmt.Fprintf(os.Stderr, "couldn't open primers %v\n", *optP)
+	  os.Exit(1)
+  }
+
+  primers := fastautils.ReadAll(f)
+  np := len(primers)
+  if np != 2 {
+	  fmt.Fprintf(os.Stderr, "primers have %d sequences; " +
+		  "expected 2\n", np)
+	  os.Exit(1)
+  }
+  //<<Compile primer regular expressions>>
+#+end_src
+#+begin_export latex
+We import \texttt{fastautils} and \texttt{fasta}.
+#+end_export
+#+begin_src go <<Imports>>=
+  "github.com/ivantsers/fastautils"
+  "github.com/evolbioinf/fasta"
+#+end_src
+#+begin_export latex
+A target contig (or its parts) may be inverted compared to some
+reference due to assembly artifacts. If the primers were desinged from
+the reference contig, and the target amplicon is localised entirely
+within an inversion, it still can be detected if one swaps forwad and
+reverse primers. To enable the search for inverted amplicons, we need
+two pairs of primers, upright and inverted. We declare an array to
+store primers' regular expressions in and proceed with compiling pairs
+regular expressions.
+#+end_export
+#+begin_src go <<Compile primer regular expressions>>=
+  var primerRegexps [4]*regexp.Regexp
+  //<<Compile an upright pair>>
+  //<<Compile an inverted pair>>
+#+end_src
+#+begin_export latex
+The first sequence is interpreted as the forward primer, the second
+sequence is interpreted as the reverse primer. We take the forward
+primers' sequence data as is and compile a regular expression from
+it. Then we calculate a reverse complement sequence from the reverse
+primer and use it to compile the corresponding regular expression.
+#+end_export
+#+begin_src go <<Compile an upright pair>>=
+  primer := primers[0]
+  fseq := primer.Data()
+  primerRegexps[0] = regexp.MustCompile(string(fseq))
+
+  primer = primers[1]
+  primer.ReverseComplement()
+  rseq := primer.Data()
+  primerRegexps[1] = regexp.MustCompile(string(rseq))
+#+end_src
+#+begin_export latex
+We import \texttt{regexp}.
+#+end_export
+#+begin_src go <<Imports>>=
+  "regexp"
+#+end_src
+#+begin_export latex
+We swap the primers and compile the inverted pair.
+#+end_export
+#+begin_src go <<Compile an inverted pair>>=
+  primer = primers[1]
+  primer.ReverseComplement()
+  fseq = primer.Data()
+  primerRegexps[2] = regexp.MustCompile(string(fseq))
+
+  primer = primers[0]
+  primer.ReverseComplement()
+  rseq = primer.Data()
+  primerRegexps[3] = regexp.MustCompile(string(rseq))
+#+end_src
+#+begin_export latex
+We process genomes concurrently. First, we initialize a wait group and
+a \texttt{mutex}. Then run the function \texttt{processGenome} (which
+we will define shortly) concurrently for all genomes specified by the
+user.
+#+end_export
+#+begin_src go <<Run the analysis>>=
+    var wg sync.WaitGroup
+  //  var mu sync.Mutex
+    for _, genomePath := range genomePaths {
+	    wg.Add(1)
+	    go processGenome(&wg, genomePath, primerRegexps, *optL)
+    }
+    wg.Wait()
+#+end_src
+#+begin_export latex
+We import \texttt{sync}.
+#+end_export
+#+begin_src go <<Imports>>=
+  "sync"
+#+end_src
+#+begin_export latex
+The function \texttt{processGenome} reads the genome and searches for
+an amplicon using the regular expressions compiled from primers'
+sequences and the maximum amplicon length. The used waiting group is
+dismissed upon finishing.
+#+end_export
+#+begin_src go <<Functions>>=
+  func processGenome(wg *sync.WaitGroup, genomePath string,
+	  primerRegexps [4]*regexp.Regexp, ampL int) {
+	  defer wg.Done()
+	  //<<Read the genome>>
+	  //<<Find amplicons>>
+  }
+#+end_src
+#+begin_export latex
+We attempt to open the genome file and read all sequences from it. we
+notify the user and exit if the file could not be opened or it was
+corrupted, that is, no \texttt{fasta} entries could be read from
+it. In the end we remember the genome's file base name.
+#+end_export
+#+begin_src go <<Read the genome>>=
+  genomeFile, err := os.Open(genomePath)
+
+  if err != nil {
+	  fmt.Fprintf(os.Stderr, "couldn't open genome %v\n",
+		  genomePath)
+	  os.Exit(1)
+  }
+
+  genomeSeq := fastautils.ReadAll(genomeFile)
+  ng := len(genomeSeq)
+  if ng < 1 {
+	  fmt.Fprintf(os.Stderr, "genome %v is corrupted\n",
+		  genomePath)
+	  os.Exit(1)
+  }
+  genomeName := filepath.Base(genomeFile.Name())
+#+end_src
+#+begin_export latex
+We import \texttt{path/filepath}.
+#+end_export
+#+begin_src go <<Imports>>=
+  "path/filepath"
+#+end_src
+#+begin_export latex
+We iterate over genome's contigs and search for amplicons. We first
+try to find 'upright' amplicons, as well as 'inverted' ones.
+#+end_export
+#+begin_src go <<Find amplicons>>=
+  ampIndex := 1
+  for _, contig := range genomeSeq {
+	  //<<Search for upright amplicons>>
+  }
+  for _, contig := range genomeSeq {
+	  //<<Search for inverted amplicons>>
+  }
+#+end_src
+#+begin_export latex
+We take the upright pair of primers and initialize an amplicon
+direction string, which is empty now since the amplicon is supposed to
+be upright by default. and try to find all matches for the forward
+primer. Then we iterate over these matches and try to pair it with a
+reverse primer match found in the downstream sequence that could
+potentially make for an amplicon. Once we finished with the search for
+matches, we return found amplicons if any.
+#+end_export
+#+begin_src go <<Search for upright amplicons>>=
+  var forwardMatches [][]int
+  forward := primerRegexps[0]
+  reverse := primerRegexps[1]
+  ampDirection := ""
+  //<<Find forward matches>>
+  contigLen := len(contig.Data())
+  for _, fm := range forwardMatches {
+	  //<<Get the downstream sequence>>
+	  //<<Find reverse matches>>
+	  //<<Report found amplicons>>
+  }
+#+end_src
+#+begin_export latex
+We search for all matches in the contig. If no matches were found, we
+proceed with the next contig.
+#+end_export
+#+begin_src go <<Find forward matches>>=
+  forwardMatches = forward.FindAllIndex(contig.Data(), -1)
+  if forwardMatches == nil {
+	  continue
+  }
+#+end_src
+#+begin_export latex
+We don't want to repeat the search from the start of the contig, so we
+extract a portion of the contig that is limited by the start of the
+forward primer match and the end coordinate that we still have to
+find.
+#+end_export
+#+begin_src go <<Get the downstream sequence>>=
+  fmStart := fm[0]
+  dseqEnd := 0
+  //<<Find downstream sequence's end>>
+  dseq := contig.Data()[fmStart:dseqEnd]
+#+end_src
+#+begin_export latex
+The downstram sequence's end depends on the maximum amplicon length
+specified by the user (\texttt{-l}).
+#+end_export
+#+begin_src go <<Find downstream sequence's end>>=
+  if contigLen < fmStart + ampL {
+	  dseqEnd = contigLen
+  } else {
+	  dseqEnd = fmStart + ampL
+  }
+#+end_src
+#+begin_export latex
+We search for the reverse primer matches. If no matches were found, we
+proceed with the next \texttt{fm}.
+#+end_export
+#+begin_src go <<Find reverse matches>>=
+  reverseMatches := reverse.FindAllIndex(dseq, -1)
+  if reverseMatches == nil {
+	  continue
+  }
+#+end_src
+#+begin_export latex
+We iterate over the reverse matches and print the amplicons. An
+amplicon's header consists of the genome file base name, the word
+'amplicon' and its number followed by found amplicon direction, which
+is \texttt{\_inverted} if the amplicon was inverted, otherwise it is
+empty.
+#+end_export
+#+begin_src go <<Report found amplicons>>=
+  for _, rm := range reverseMatches {
+	  ampHeader :=  fmt.Sprintf("%s_amplicon_%d%s",
+		  genomeName, ampIndex, ampDirection)
+	  ampData := dseq[0:rm[1]]
+	  amplicon := fasta.NewSequence(ampHeader, ampData)
+	  fmt.Println(amplicon)
+	  ampIndex++
+  }
+#+end_src
+#+begin_export latex
+We discard the previous results, take the inverted primers and repeat
+the search likewise.
+#+end_export
+#+begin_src go <<Search for inverted amplicons>>=
+  var forwardMatches [][]int
+  forward := primerRegexps[2]
+  reverse := primerRegexps[3]
+  ampDirection := "_inverted"
+  //<<Find forward matches>>
+  contigLen := len(contig.Data())
+  for _, fm := range forwardMatches {
+	  //<<Get the downstream sequence>>
+	  //<<Find reverse matches>>
+	  //<<Report found amplicons>>
+  }
+#+end_src
