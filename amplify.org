@@ -29,6 +29,7 @@ opt for reporting reversed complements of inverted amplicons.
   optT := flag.Int("t", runtime.NumCPU(), "maximum number of threads")
   optI := flag.Bool("i", false, "report reversed complements of " +
 	  "inverted amplicons ('re-invert them back')")
+  optD := flag.Bool("d", false, "degenerate primers (contain Ns)")
 #+end_src
 #+begin_export latex
 We import \texttt{flag} and \texttt{runtime}.
@@ -128,18 +129,23 @@ regular expressions.
 #+begin_export latex
 The first sequence is interpreted as the forward primer, the second
 sequence is interpreted as the reverse primer. We take the forward
-primers' sequence data as is and compile a regular expression from
-it. Then we calculate a reverse complement sequence from the reverse
-primer and use it to compile the corresponding regular expression.
+primers' sequence data as is, check if primer degeneracy is expected,
+and compile a regular expression from it. Then we calculate a reverse
+complement sequence from the reverse primer and use it to compile the
+corresponding regular expression.
 #+end_export
 #+begin_src go <<Compile an upright pair>>=
   primer := primers[0]
-  fseq := primer.Data()
+  primData := primer.Data()
+  //<<Degenerate primer?>>
+  fseq := primData
   primerRegexps[0] = regexp.MustCompile(string(fseq))
 
   primer = primers[1]
   primer.ReverseComplement()
-  rseq := primer.Data()
+  primData = primer.Data()
+  //<<Degenerate primer?>>
+  rseq := primData
   primerRegexps[1] = regexp.MustCompile(string(rseq))
 #+end_src
 #+begin_export latex
@@ -149,17 +155,36 @@ We import \texttt{regexp}.
   "regexp"
 #+end_src
 #+begin_export latex
+A degenerate primer contains ambiguous nucleotides (such as
+\texttt{N}). By default, we interprete these literally, however, if
+the user has toggled \texttt{-d} flag, we interpret \texttt{N} as any
+nucleotide. For this, we replace \texttt{N} with dots.
+#+end_export
+#+begin_src go <<Degenerate primer?>>=
+  if *optD {
+	  for i, b := range primData {
+		  if b == 'N' {
+			  primData[i] = '.'
+		  }
+	  }
+  }
+#+end_src
+#+begin_export latex
 We swap the primers and compile the inverted pair.
 #+end_export
 #+begin_src go <<Compile an inverted pair>>=
   primer = primers[1]
   primer.ReverseComplement()
-  fseq = primer.Data()
+  primData = primer.Data()
+  //<<Degenerate primer?>>
+  fseq = primData
   primerRegexps[2] = regexp.MustCompile(string(fseq))
 
   primer = primers[0]
   primer.ReverseComplement()
-  rseq = primer.Data()
+  primData = primer.Data()
+  //<<Degenerate primer?>>
+  rseq = primData
   primerRegexps[3] = regexp.MustCompile(string(rseq))
 #+end_src
 #+begin_export latex
